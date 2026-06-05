@@ -1,0 +1,11 @@
+- name: Run Postgres container
+  community.docker.docker_container:
+    name: crm-postgres
+    image: postgres:16
+    restart_policy: unless-stopped
+    env:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: "{{ pg_password }}" # put real value in group_vars/vault
+      POSTGRES_DB: crm
+    ports: ["5432:5432"]
+    volumes: ["/data/pg:/var/lib/postgresql/data"]

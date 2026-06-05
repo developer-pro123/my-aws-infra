@@ -1,0 +1,6 @@
+- name: Run Redis container
+  community.docker.docker_container:
+    name: crm-redis
+    image: redis:7
+    restart_policy: unless-stopped
+    ports: ["6379:6379"]

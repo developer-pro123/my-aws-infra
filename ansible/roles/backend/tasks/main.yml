@@ -1,0 +1,10 @@
+- name: Run CRM backend container
+  community.docker.docker_container:
+    name: crm-backend
+    image: ghcr.io/paidalabs-iref/crm-backend:latest # your image
+    restart_policy: unless-stopped
+    ports: ["9001:9001"]
+    env:
+      DATABASE_URL: "postgres://crm:{{ pg_password }}@172.17.0.1:5432/crm"
+      REDIS_URL: "redis://172.17.0.1:6379"
+      # ...the rest of the backend env
