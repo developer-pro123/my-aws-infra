@@ -1,0 +1,28 @@
+---
+###############################################################################
+# cluster.yml - turn the bare control-plane EC2 into a Kubernetes control plane.
+#
+# Run it:
+#   cd ansible
+#   ansible-playbook -i inventory/dev.ini cluster.yml
+#   # for prod: add  -e cluster_name=crm-prod
+#
+# Roles run top-to-bottom:
+#   common          OS prep (swap, kernel modules, sysctl)
+#   containerd      container runtime
+#   kubernetes-base kubeadm/kubelet/kubectl + awscli
+#   control-plane   kubeadm init, CNI, write join command to SSM   (built next)
+#   addons          metrics-server, ingress-nginx, cluster-autoscaler (built next)
+###############################################################################
+
+- name: Bootstrap the Kubernetes control plane
+  hosts: masters
+  become: true # run as root (sudo)
+  gather_facts: true
+
+  roles:
+    - common
+    - containerd
+    - kubernetes-base
+    - control-plane
+    - addons

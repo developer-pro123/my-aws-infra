@@ -1,7 +1,0 @@
-- name: Install Docker
-  apt:
-    name: [docker.io, python3-docker]
-    update_cache: true
-    state: present
-- name: Start Docker
-  service: { name: docker, state: started, enabled: true }

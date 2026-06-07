@@ -1,0 +1,24 @@
+###############################################################################
+# Cluster-wide configuration (NON-secret).
+# Our inventory only has a [masters] group (the control plane), so these apply
+# to it. Secrets stay in the encrypted group_vars/all.yml vault.
+###############################################################################
+
+# Kubernetes minor version - MUST match Terraform's k8s_version (workers install
+# the same version via their user-data).
+kubernetes_version: "1.30"
+
+# Pod network CIDR. 192.168.0.0/16 is Calico's default.
+pod_network_cidr: "192.168.0.0/16"
+
+# Service network CIDR (kubeadm default).
+service_cidr: "10.96.0.0/12"
+
+# --- Must match the Terraform environment you applied ---
+# Default is dev. For prod run with:  -e cluster_name=crm-prod -e aws_region=ap-south-1
+cluster_name: "crm-dev"
+aws_region: "ap-south-1"
+
+# SSM parameter the control plane writes the join command into (workers read it).
+# Matches the Terraform resource: /<cluster_name>/k8s/join-command
+join_command_ssm_param: "/{{ cluster_name }}/k8s/join-command"

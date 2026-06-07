@@ -1,0 +1,69 @@
+---
+###############################################################################
+# kubernetes-base role - install the Kubernetes tooling on the node.
+#
+#   kubeadm  - bootstraps the cluster (init / join)
+#   kubelet  - the node agent that runs pods
+#   kubectl  - the CLI to talk to the cluster
+#   awscli   - so the control plane can write the join command to SSM
+#
+# Packages are version-pinned ("hold") so an apt upgrade can't accidentally
+# move the cluster to a new Kubernetes version.
+###############################################################################
+
+- name: Install prerequisite packages
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+    state: present
+    update_cache: true
+
+- name: Ensure /etc/apt/keyrings exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add the Kubernetes apt GPG key
+  ansible.builtin.shell: >
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
+    | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add the Kubernetes apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+    filename: kubernetes
+    state: present
+
+- name: Install kubelet, kubeadm, kubectl
+  ansible.builtin.apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: true
+
+- name: Pin (hold) the Kubernetes packages at this version
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable kubelet (it will fully start after kubeadm init/join)
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: true
+
+- name: Install AWS CLI (control plane writes the join command to SSM)
+  ansible.builtin.apt:
+    name: awscli
+    state: present

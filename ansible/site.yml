@@ -1,7 +1,0 @@
-- hosts: crm_dev
-  become: true # run as root (sudo)
-  roles:
-    - docker # install Docker engine
-    - postgres # run Postgres in a container
-    - redis # run Redis in a container
-    - backend # run the CRM backend container

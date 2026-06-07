@@ -1,0 +1,3 @@
+---
+# No tunable defaults for the common role yet - it only applies fixed
+# Kubernetes prerequisites. Kept for structure/consistency.
