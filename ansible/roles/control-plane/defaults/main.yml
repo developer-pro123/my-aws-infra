@@ -1,0 +1,9 @@
+---
+# Calico CNI manifest. Its default pod CIDR is 192.168.0.0/16, which matches
+# our pod_network_cidr - so the stock manifest works as-is.
+calico_manifest_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/calico.yaml"
+
+# Public IP used in the API server certificate (so kubectl works from your
+# laptop). Our Terraform-generated inventory uses the public IP as the host,
+# so inventory_hostname IS the control plane's public IP.
+control_plane_public_ip: "{{ inventory_hostname }}"

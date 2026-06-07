@@ -1,0 +1,48 @@
+---
+###############################################################################
+# addons role - cluster services installed after the cluster is up.
+#
+#   metrics-server     -> CPU/memory metrics (for `kubectl top` + HPA)
+#   ingress-nginx      -> the app's entry point from the internet (NodePort)
+#   cluster-autoscaler -> scales the worker ASG 1..max for campaign bursts
+###############################################################################
+
+# ============================ metrics-server ================================
+- name: Install metrics-server
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig }} apply -f {{ metrics_server_url }}
+  register: ms_apply
+  changed_when: "'created' in ms_apply.stdout or 'configured' in ms_apply.stdout"
+
+- name: Read current metrics-server args
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig }} -n kube-system
+    get deployment metrics-server -o jsonpath='{.spec.template.spec.containers[0].args}'
+  register: ms_args
+  changed_when: false
+
+# kubelet uses self-signed certs on a self-managed cluster, so metrics-server
+# must be told to skip TLS verification or it can't scrape node metrics.
+- name: Allow metrics-server to talk to kubelet (--kubelet-insecure-tls)
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig }} -n kube-system patch deployment metrics-server
+    --type=json
+    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+  when: "'--kubelet-insecure-tls' not in ms_args.stdout"
+
+# ============================ ingress-nginx =================================
+- name: Install ingress-nginx (bare-metal / NodePort)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig }} apply -f {{ ingress_nginx_url }}
+  register: ing_apply
+  changed_when: "'created' in ing_apply.stdout or 'configured' in ing_apply.stdout"
+
+# ========================== cluster-autoscaler ==============================
+- name: Render the cluster-autoscaler manifest
+  ansible.builtin.template:
+    src: cluster-autoscaler.yaml.j2
+    dest: /tmp/cluster-autoscaler.yaml
+    mode: "0644"
+
+- name: Install the cluster-autoscaler
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig }} apply -f /tmp/cluster-autoscaler.yaml
+  register: ca_apply
+  changed_when: "'created' in ca_apply.stdout or 'configured' in ca_apply.stdout"

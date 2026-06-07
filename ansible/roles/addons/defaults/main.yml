@@ -1,0 +1,18 @@
+---
+###############################################################################
+# addons role - versions and URLs (pinned to match the k8s 1.30 cluster)
+###############################################################################
+
+# metrics-server: enables `kubectl top` and HPA (CPU/memory based pod scaling).
+metrics_server_version: "v0.7.2"
+metrics_server_url: "https://github.com/kubernetes-sigs/metrics-server/releases/download/{{ metrics_server_version }}/components.yaml"
+
+# ingress-nginx: bare-metal flavour (uses a NodePort Service, no cloud LB).
+ingress_nginx_version: "v1.11.3"
+ingress_nginx_url: "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ ingress_nginx_version }}/deploy/static/provider/baremetal/deploy.yaml"
+
+# cluster-autoscaler: image tag should track the cluster minor version (1.30).
+cluster_autoscaler_image: "registry.k8s.io/autoscaling/cluster-autoscaler:v1.30.0"
+
+# kubeconfig used by kubectl (tasks run as root via become).
+kubeconfig: /etc/kubernetes/admin.conf

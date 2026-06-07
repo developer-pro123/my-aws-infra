@@ -14,8 +14,10 @@ private_subnet_cidrs = ["10.20.11.0/24"]
 enable_nat_gateway   = false # workers reach the internet via the control-plane NAT instance
 single_nat_gateway   = true  # ignored when enable_nat_gateway = false
 
-# --- Compute ---
-control_plane_instance_type = "t3.medium"
+# --- Compute (free-tier-eligible x86 types) ---
+# t3.small = 2 GB = kubeadm's minimum for the control plane.
+# If the control plane feels tight, switch to "m7i-flex.large" (8 GB, also free-tier eligible).
+control_plane_instance_type = "t3.small"
 worker_instance_type        = "t3.small"
 worker_min_size             = 1
 worker_max_size             = 2

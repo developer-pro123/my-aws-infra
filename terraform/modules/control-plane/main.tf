@@ -112,7 +112,8 @@ resource "aws_instance" "control_plane" {
   user_data = var.act_as_nat ? local.nat_user_data : null
 
   metadata_options {
-    http_tokens = "required" # IMDSv2 only
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 2          # let pods (cluster-autoscaler) reach IMDS for the node IAM role
   }
 
   root_block_device {

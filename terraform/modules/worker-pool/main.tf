@@ -36,8 +36,9 @@ resource "aws_launch_template" "worker" {
   vpc_security_group_ids = [var.security_group_id]
 
   metadata_options {
-    http_tokens   = "required" # IMDSv2 only
-    http_endpoint = "enabled"
+    http_tokens                 = "required" # IMDSv2 only
+    http_endpoint               = "enabled"
+    http_put_response_hop_limit = 2 # let pods reach IMDS for the node IAM role
   }
 
   block_device_mappings {

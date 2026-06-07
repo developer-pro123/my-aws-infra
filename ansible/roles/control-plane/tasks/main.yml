@@ -1,0 +1,80 @@
+---
+###############################################################################
+# control-plane role - create the Kubernetes cluster and publish the join cmd.
+#
+# Steps:
+#   1. kubeadm init        -> the cluster is born (idempotent: skipped if done)
+#   2. kubeconfig          -> so `kubectl` works for the ubuntu user
+#   3. wait for API        -> don't proceed until the API server answers
+#   4. Calico CNI          -> pod networking (without it, nodes stay NotReady)
+#   5. join command -> SSM -> workers read this and auto-join the cluster
+#
+# advertise-address = the PRIVATE IP (workers reach the API over the VPC).
+# cert-extra-sans   = the PUBLIC IP (so kubectl works from your laptop too).
+###############################################################################
+
+- name: Check whether the cluster is already initialised
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_admin_conf
+
+- name: Run kubeadm init (first time only)
+  ansible.builtin.command: >
+    kubeadm init
+    --pod-network-cidr={{ pod_network_cidr }}
+    --apiserver-advertise-address={{ ansible_default_ipv4.address }}
+    --apiserver-cert-extra-sans={{ control_plane_public_ip }}
+    --cri-socket=unix:///run/containerd/containerd.sock
+  when: not kubeadm_admin_conf.stat.exists
+  register: kubeadm_init
+  changed_when: kubeadm_init.rc == 0
+
+# --- kubeconfig for the ubuntu user (so you can run kubectl over SSH) --------
+- name: Create ~/.kube for the ubuntu user
+  ansible.builtin.file:
+    path: /home/ubuntu/.kube
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Install admin kubeconfig for the ubuntu user
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ubuntu/.kube/config
+    remote_src: true
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+
+# --- Wait until the API server is healthy before applying anything -----------
+- name: Wait for the Kubernetes API server to be ready
+  ansible.builtin.command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get --raw=/healthz
+  register: api_healthz
+  until: api_healthz.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+# --- Pod networking (CNI) ---------------------------------------------------
+- name: Install the Calico CNI
+  ansible.builtin.command: kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f {{ calico_manifest_url }}
+  register: calico_apply
+  changed_when: "'created' in calico_apply.stdout or 'configured' in calico_apply.stdout"
+
+# --- Publish the join command so the ASG workers can join -------------------
+- name: Generate a fresh kubeadm join command
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_cmd
+  changed_when: true
+
+- name: Write the join command to SSM (SecureString)
+  ansible.builtin.command: >
+    aws ssm put-parameter
+    --name "{{ join_command_ssm_param }}"
+    --value "{{ join_cmd.stdout }}"
+    --type SecureString
+    --overwrite
+    --region {{ aws_region }}
+  changed_when: true
+  no_log: true # the join command contains a token - keep it out of logs

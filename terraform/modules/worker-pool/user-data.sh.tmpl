@@ -11,7 +11,8 @@
 #
 # Template vars (filled by Terraform): cluster_name, region,
 #                                      ssm_join_param_name, k8s_version
-# Bash's own $VARs are escaped as $${VAR} so templatefile() leaves them alone.
+# Bash variable refs are escaped as $${VAR} so templatefile leaves them alone.
+# Command substitution $(...) is NOT a template directive - write it as plain $.
 ###############################################################################
 set -euxo pipefail
 
@@ -40,7 +41,7 @@ sysctl --system
 # --- 2. Wait for outbound internet -------------------------------------------
 # In dev the route out is the control-plane NAT instance, which may still be
 # booting. Retry before we depend on the network.
-for i in $$(seq 1 30); do
+for i in $(seq 1 30); do
   if curl -fsS --max-time 5 https://pkgs.k8s.io >/dev/null 2>&1; then
     echo "outbound internet is up"; break
   fi
@@ -80,8 +81,8 @@ fi
 
 # --- 5. Fetch the join command and join the cluster --------------------------
 # Retry: the control plane may still be initialising when this node boots.
-for i in $$(seq 1 30); do
-  JOIN_CMD=$$(aws ssm get-parameter \
+for i in $(seq 1 30); do
+  JOIN_CMD=$(aws ssm get-parameter \
     --name "$${JOIN_PARAM}" \
     --with-decryption \
     --region "$${REGION}" \
