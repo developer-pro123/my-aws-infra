@@ -1,0 +1,9 @@
+[masters]
+${control_plane_ip} ansible_user=${ssh_user} ansible_ssh_private_key_file=${ssh_private_key_path}
+
+# Worker nodes are NOT listed here.
+# They are created by an Auto Scaling Group and auto-join the cluster via the
+# launch template's user-data (it reads the kubeadm join command from SSM).
+
+[k8s_cluster:children]
+masters

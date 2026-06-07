@@ -1,0 +1,102 @@
+#!/bin/bash
+###############################################################################
+# Worker node bootstrap (runs on every new ASG instance).
+#
+# It installs the container runtime + Kubernetes packages, then fetches the
+# kubeadm join command (written to SSM by the control plane) and joins the
+# cluster. This is what lets the Cluster Autoscaler add nodes hands-free.
+#
+# NOTE: installing packages on every boot is fine for learning. In production
+# you would bake these into a custom AMI (Packer) so new nodes join in seconds.
+#
+# Template vars (filled by Terraform): cluster_name, region,
+#                                      ssm_join_param_name, k8s_version
+# Bash's own $VARs are escaped as $${VAR} so templatefile() leaves them alone.
+###############################################################################
+set -euxo pipefail
+
+K8S_MINOR="${k8s_version}"
+REGION="${region}"
+JOIN_PARAM="${ssm_join_param_name}"
+
+# --- 1. System prerequisites -------------------------------------------------
+swapoff -a
+sed -i '/ swap / s/^/#/' /etc/fstab
+
+cat <<EOF >/etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+modprobe overlay
+modprobe br_netfilter
+
+cat <<EOF >/etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+sysctl --system
+
+# --- 2. Wait for outbound internet -------------------------------------------
+# In dev the route out is the control-plane NAT instance, which may still be
+# booting. Retry before we depend on the network.
+for i in $$(seq 1 30); do
+  if curl -fsS --max-time 5 https://pkgs.k8s.io >/dev/null 2>&1; then
+    echo "outbound internet is up"; break
+  fi
+  echo "waiting for outbound internet (attempt $${i}/30)..."; sleep 10
+done
+
+# --- 3. Container runtime (containerd) ---------------------------------------
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y apt-transport-https ca-certificates curl gpg unzip containerd
+
+mkdir -p /etc/containerd
+containerd config default | tee /etc/containerd/config.toml >/dev/null
+# Use the systemd cgroup driver (required by kubelet defaults).
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+
+# --- 3. Kubernetes packages (kubeadm, kubelet, kubectl) ----------------------
+mkdir -p /etc/apt/keyrings
+curl -fsSL "https://pkgs.k8s.io/core:/stable:/v$${K8S_MINOR}/deb/Release.key" \
+  | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v$${K8S_MINOR}/deb/ /" \
+  > /etc/apt/sources.list.d/kubernetes.list
+
+apt-get update -y
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+systemctl enable kubelet
+
+# --- 4. AWS CLI (to read the join command from SSM) --------------------------
+if ! command -v aws >/dev/null 2>&1; then
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install
+fi
+
+# --- 5. Fetch the join command and join the cluster --------------------------
+# Retry: the control plane may still be initialising when this node boots.
+for i in $$(seq 1 30); do
+  JOIN_CMD=$$(aws ssm get-parameter \
+    --name "$${JOIN_PARAM}" \
+    --with-decryption \
+    --region "$${REGION}" \
+    --query 'Parameter.Value' \
+    --output text 2>/dev/null || true)
+
+  if [ -n "$${JOIN_CMD}" ] && [ "$${JOIN_CMD}" != "PLACEHOLDER" ]; then
+    echo "Join command retrieved, joining cluster..."
+    eval "$${JOIN_CMD}"
+    exit 0
+  fi
+
+  echo "Join command not ready yet (attempt $${i}/30), waiting 20s..."
+  sleep 20
+done
+
+echo "ERROR: could not retrieve kubeadm join command from SSM after 10 minutes" >&2
+exit 1
